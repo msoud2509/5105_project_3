@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package mktplace;
+
+service MarketplaceService {
+  rpc CreateItem(CreateItemRequest) returns (CreateItemResponse);
+  rpc GetItem(GetItemRequest) returns (GetItemResponse);
+  rpc SearchItems(SearchItemsRequest) returns (SearchItemsResponse);
+  rpc UpdateItem(UpdateItemRequest) returns (UpdateItemResponse);
+  rpc PlaceBid(PlaceBidRequest) returns (PlaceBidResponse);
+}
+
+message Item {
+  string item_id = 1;
+  string seller_id = 2;
+  string title = 3;
+  string category = 4;
+  string description = 5;
+  double starting_price = 6;
+  double current_price = 7;
+  int32 quantity = 8;
+  string status = 9;
+  int32 version = 10;  // sequence number for versioning
+}
+
+message CreateItemRequest {
+  string seller_id = 1;
+  string title = 2;
+  string category = 3;
+  string description = 4;
+  double starting_price = 5;
+  int32 quantity = 6;
+}
+
+message CreateItemResponse {
+  bool success = 1;
+  string item_id = 2;
+}
+
+message GetItemRequest {
+  string item_id = 1;
+}
+
+message GetItemResponse {
+  Item item = 1;
+}
+
+message SearchItemsRequest {
+  string keyword = 1;
+  string category = 2;
+  string status = 3;
+}
+
+message SearchItemsResponse {
+  repeated Item items = 1;
+  int32 count = 2;
+}
+
+// UpdateItem request and response
+message UpdateItemRequest {
+  string item_id = 1;
+  string title = 2;
+  string description = 3;
+  int32 quantity = 4;
+  string status = 5;
+  double current_price = 6;
+}
+
+message UpdateItemResponse {
+  bool overwritten = 1;
+}
+
+message PlaceBidRequest {
+  string item_id = 1;
+  string bidder_id = 2;
+  double bid_amount = 3;
+}
+
+message PlaceBidResponse {
+  bool success = 1;
+  double new_price = 3; // new price after bid is placed
+}
