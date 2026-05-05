@@ -53,6 +53,7 @@ class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
     def CreateItem(self, request, context):
         """Forward CreateItem request to a service node."""
         try:
+            logger.info(f"Received CreateItem request for item_id={request.item_id}")
             return self._forward_to_node('CreateItem', request)
         except Exception as e:
             context.set_details(str(e))
@@ -62,6 +63,7 @@ class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
     def GetItem(self, request, context):
         """Forward GetItem request to a service node."""
         try:
+            logger.info(f"Received GetItem request for item_id={request.item_id}")
             return self._forward_to_node('GetItem', request)
         except Exception as e:
             context.set_details(str(e))
@@ -71,6 +73,7 @@ class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
     def SearchItems(self, request, context):
         """Forward SearchItems request to a service node."""
         try:
+            logger.info(f"Received SearchItems request")
             return self._forward_to_node('SearchItems', request)
         except Exception as e:
             context.set_details(str(e))
@@ -80,6 +83,7 @@ class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
     def UpdateItem(self, request, context):
         """Forward UpdateItem request to a service node."""
         try:
+            logger.info(f"Received UpdateItem request for item_id={request.item_id}")
             return self._forward_to_node('UpdateItem', request)
         except Exception as e:
             context.set_details(str(e))
@@ -89,6 +93,7 @@ class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
     def PlaceBid(self, request, context):
         """Forward PlaceBid request to a service node."""
         try:
+            logger.info(f"Received PlaceBid request for item_id={request.item_id}")
             return self._forward_to_node('PlaceBid', request)
         except Exception as e:
             context.set_details(str(e))

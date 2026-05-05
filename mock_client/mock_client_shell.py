@@ -46,6 +46,7 @@ Type 'help <command>' for command-specific help.
     
     def __init__(self, host='localhost', port=50051):
         super().__init__()
+        print(host, port)
         self.host = host
         self.port = port
         self.address = f'{host}:{port}'
@@ -394,7 +395,8 @@ Type 'help <command>' for command-specific help.
 
 def main():
     parser = argparse.ArgumentParser(description='Marketplace Interactive CLI Shell')
-    parser.add_argument('--host', default='localhost', help='Controller host')
+    # host needs to be marketplace-controller because we are running in dockernetwork
+    parser.add_argument('--host', default='marketplace-controller', help='Controller host')
     parser.add_argument('--port', type=int, default=50051, help='Controller port')
     
     args = parser.parse_args()

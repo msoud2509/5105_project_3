@@ -23,6 +23,22 @@ x-service-node: &service-node-template
     - service_node=true
 
 services:
+  ################################# Mock Client #################################
+  mock-client:
+    build:
+      context: .
+      dockerfile: mock_client/Dockerfile
+    container_name: mock-client
+    profiles: ["debug"] # prevent mock client from running in by default
+    stdin_open: true # interactive
+    tty: true # interactive
+    ports:
+      - "60051:60051"
+    networks:
+      - marketplace-network
+    environment:
+      - GRPC_HOST=marketplace-controller
+
   ################################# CONTROLLER #################################
   controller:
     build:

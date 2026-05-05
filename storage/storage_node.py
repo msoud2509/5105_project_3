@@ -6,6 +6,11 @@ import os
 from concurrent import futures
 from threading import Lock
 from typing import Dict
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 try:
     from gRPC import mktplace_pb2

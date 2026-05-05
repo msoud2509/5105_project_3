@@ -4,8 +4,13 @@ import grpc
 import time
 import threading
 import os
+import logging
 from concurrent import futures
 from typing import Dict, Optional, List
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Import generated protobuf classes
 try:
@@ -14,7 +19,7 @@ try:
     from gRPC import service_node_pb2
     from gRPC import service_node_pb2_grpc
 except ImportError:
-    print("Warning: proto files not found. See README.md for instructions on generating gRPC code.")
+    logger.warning("Warning: proto files not found. See README.md for instructions on generating gRPC code.")
 
 
 class ServiceNode(mktplace_pb2_grpc.MarketplaceServiceServicer, 
@@ -31,17 +36,17 @@ class ServiceNode(mktplace_pb2_grpc.MarketplaceServiceServicer,
         self.auction_watchers: Dict[str, List] = {}
         self.auction_lock = threading.Lock()
         
-        print(f"[ServiceNode {service_node_id}] Initialized")
+        logger.info(f"[ServiceNode {service_node_id}] Initialized")
     
-    # ==================== Storage Node Assignment ====================
+    ####################### Storage Node Assignment #######################
     
     def AssignStorageNode(self, request, context):
         """Receive storage node assignment from controller."""
         with self.lock:
             self.storage_node_id = request.storage_node_id
             self.storage_node_address = request.storage_node_address
-        print(f"[ServiceNode {self.service_node_id}] Assigned to storage node {self.storage_node_id} "
-              f"at {self.storage_node_address}")
+        logger.info(f"[ServiceNode {self.service_node_id}] Assigned to storage node {self.storage_node_id} "
+                    f"at {self.storage_node_address}")
         return service_node_pb2.AssignStorageNodeResponse(success=True)
     
     def UpdateStorageNode(self, request, context):
@@ -50,8 +55,8 @@ class ServiceNode(mktplace_pb2_grpc.MarketplaceServiceServicer,
             old_storage_id = self.storage_node_id
             self.storage_node_id = request.storage_node_id
             self.storage_node_address = request.storage_node_address
-        print(f"[ServiceNode {self.service_node_id}] Storage node updated from {old_storage_id} "
-              f"to {self.storage_node_id} at {self.storage_node_address}")
+        logger.info(f"[ServiceNode {self.service_node_id}] Storage node updated from {old_storage_id} "
+                    f"to {self.storage_node_id} at {self.storage_node_address}")
         return service_node_pb2.UpdateStorageNodeResponse(success=True)
     
     # ==================== Storage Node Communication ====================
@@ -142,7 +147,7 @@ class ServiceNode(mktplace_pb2_grpc.MarketplaceServiceServicer,
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
             return
         
-        print(f"[ServiceNode {self.service_node_id}] Client {bidder_id} joined auction for item {item_id}")
+        logger.info(f"[ServiceNode {self.service_node_id}] Client {bidder_id} joined auction for item {item_id}")
         
         # Create a queue for this client's updates
         client_queue = []
@@ -175,9 +180,9 @@ class ServiceNode(mktplace_pb2_grpc.MarketplaceServiceServicer,
                                 message=f"Bid placed: ${message.bid_amount}"
                             ))
                         except Exception as e:
-                            print(f"[ServiceNode] Error placing bid: {e}")
+                            logger.error(f"[ServiceNode {self.service_node_id}] Error placing bid: {e}")
             except Exception as e:
-                print(f"[ServiceNode] Error handling client bids: {e}")
+                logger.error(f"[ServiceNode {self.service_node_id}] Error handling client bids: {e}")
         
         # Start the bid handler thread
         bid_thread = threading.Thread(target=handle_client_bids, daemon=True)

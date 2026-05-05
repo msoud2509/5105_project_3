@@ -13,4 +13,8 @@ This script will do the normal gRPC code generation, but will manually fix impor
 ```bash
 docker compose up
 ```
+4. Then run the mock client container in a separate terminal:
+```bash
+docker compose run --rm mock-client
+```
 
