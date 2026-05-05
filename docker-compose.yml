@@ -1,0 +1,159 @@
+# Service node template for DRY configuration (can be easily copied for scaling)
+x-service-node: &service-node-template
+  build:
+    context: .
+    dockerfile: service_nodes/Dockerfile
+  environment:
+    - GRPC_HOST=0.0.0.0
+    - GRPC_PORT=50051
+    - CONTROLLER_HOST=controller
+    - CONTROLLER_PORT=50051
+  healthcheck:
+    test: [ "CMD", "python", "-c", "import grpc; grpc.insecure_channel('localhost:50051')" ]
+    interval: 5s
+    timeout: 2s
+    retries: 2
+    start_period: 10s
+  restart: unless-stopped
+  networks:
+    - marketplace-network
+  depends_on:
+    - controller
+  labels:
+    - service_node=true
+
+services:
+  ################################# CONTROLLER #################################
+  controller:
+    build:
+      context: .
+      dockerfile: controller/Dockerfile
+    container_name: marketplace-controller
+    ports:
+      - "50051:50051"
+    environment:
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+      - MIN_SERVICE_NODES=3
+      - MAX_SERVICE_NODES=10
+      - SCALE_CHECK_INTERVAL=10
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import grpc; grpc.insecure_channel('localhost:50051')" ]
+      interval: 5s
+      timeout: 2s
+      retries: 2
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - marketplace-network
+    depends_on:
+      - storage-node-0
+      - storage-node-1
+      - storage-node-2
+
+  # ################################# STORAGE NODES #################################
+  storage-node-0:
+    build:
+      context: .
+      dockerfile: storage/Dockerfile
+    container_name: storage-node-0
+    environment:
+      - NODE_ID=0
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+    volumes:
+      - ./storage/marketplace_items.jsonl:/app/data/marketplace_items.jsonl:ro
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import grpc; grpc.insecure_channel('localhost:50051')" ]
+      interval: 5s
+      timeout: 2s
+      retries: 2
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - marketplace-network
+
+  storage-node-1:
+    build:
+      context: .
+      dockerfile: storage/Dockerfile
+    container_name: storage-node-1
+    environment:
+      - NODE_ID=1
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+    volumes:
+      - ./storage/marketplace_items.jsonl:/app/data/marketplace_items.jsonl:ro
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import grpc; grpc.insecure_channel('localhost:50051')" ]
+      interval: 5s
+      timeout: 2s
+      retries: 2
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - marketplace-network
+
+  storage-node-2:
+    build:
+      context: .
+      dockerfile: storage/Dockerfile
+    container_name: storage-node-2
+    environment:
+      - NODE_ID=2
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+    volumes:
+      - ./storage/marketplace_items.jsonl:/app/data/marketplace_items.jsonl:ro
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import grpc; grpc.insecure_channel('localhost:50051')" ]
+      interval: 5s
+      timeout: 2s
+      retries: 2
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - marketplace-network
+
+  # ################################# SERVICE NODES #################################
+  service-node-0:
+    <<: *service-node-template
+    container_name: service-node-0
+    ports:
+      - "50055:50051"
+    environment:
+      - NODE_ID=0
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+      - CONTROLLER_HOST=controller
+      - CONTROLLER_PORT=50051
+
+  service-node-1:
+    <<: *service-node-template
+    container_name: service-node-1
+    ports:
+      - "50056:50051"
+    environment:
+      - NODE_ID=1
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+      - CONTROLLER_HOST=controller
+      - CONTROLLER_PORT=50051
+
+  service-node-2:
+    <<: *service-node-template
+    container_name: service-node-2
+    ports:
+      - "50057:50051"
+    environment:
+      - NODE_ID=2
+      - GRPC_HOST=0.0.0.0
+      - GRPC_PORT=50051
+      - CONTROLLER_HOST=controller
+      - CONTROLLER_PORT=50051
+
+networks:
+  marketplace-network:
+    driver: bridge

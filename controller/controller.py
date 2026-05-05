@@ -1,16 +1,26 @@
 import grpc
 import time
+import os
+import logging
 from concurrent import futures
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Import generated protobuf classes
 try:
     from gRPC import mktplace_pb2
     from gRPC import mktplace_pb2_grpc
+    from gRPC import service_node_pb2
+    from gRPC import service_node_pb2_grpc
 except ImportError:
-    print("Warning: mktplace_pb2 not found. See README.md for instructions on generating gRPC code.")
+    logger.warning("Proto files not found. See README.md for instructions on generating gRPC code.")
 
 from .registries import StorageNodeRegistry, ServiceNodeRegistry
 from .heartbeat import HealthMonitor
+from .scaling_manager import ServiceScalingManager
+
 
 class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
     """Controller that routes requests to service nodes."""
@@ -98,9 +108,7 @@ def start_controller(host='localhost', port=50051,
         storage_nodes: Dict of {node_id: address} for storage nodes
     """
     
-    # Initialize registries
     storage_registry = StorageNodeRegistry()
-    service_registry_for_routing = ServiceNodeRegistry_Old()
     service_registry = ServiceNodeRegistry(storage_registry)
     
     # Register storage nodes
@@ -111,28 +119,62 @@ def start_controller(host='localhost', port=50051,
         # Elect initial primary (highest ID among initial nodes)
         primary = max(storage_nodes.keys())
         storage_registry.set_primary(primary)
-        print(f"[Controller] Initial primary: storage node {primary}")
+        logger.info(f"Initial primary: storage node {primary}")
     
-    # Register service nodes
+    # Register service nodes and send them their storage node assignments
+    service_node_addresses = {}
     if service_nodes:
         for i, node_address in enumerate(service_nodes):
-            service_registry_for_routing.add_node(i, node_address)
-            # Also add to service-storage registry for assignment tracking
-            service_registry.add_service_node(node_address)
+            service_id, assigned_storage_id = service_registry.add_service_node(node_address)
+            service_node_addresses[service_id] = node_address
+            
+            # send storage node assignments to service node
+            try:
+                channel = grpc.insecure_channel(node_address)
+                stub = service_node_pb2_grpc.ServiceNodeControlStub(channel)
+                
+                assigned_address = storage_registry.get_node_address(assigned_storage_id)
+                request = service_node_pb2.AssignStorageNodeRequest(
+                    service_node_id=service_id,
+                    storage_node_address=assigned_address,
+                    storage_node_id=assigned_storage_id
+                )
+                response = stub.AssignStorageNode(request, timeout=10)
+                
+                if response.success:
+                    logger.info(f"Service node {service_id} assigned to storage {assigned_storage_id}")
+                else:
+                    logger.error(f"Failed to assign service node {service_id}")
+                
+                channel.close()
+            except Exception as e:
+                logger.error(f"Error assigning service node {service_id}: {e}")
     
     # Start health monitor for storage nodes
-    monitor = HealthMonitor(storage_registry, service_registry)
+    # Pass service_node_addresses for failover updates
+    monitor = HealthMonitor(storage_registry, service_registry, service_node_addresses)
     monitor.start()
+    
+    # Start service node scaling manager
+    scaling_manager = ServiceScalingManager(
+        service_registry=service_registry,
+        storage_registry=storage_registry,
+        service_node_addresses=service_node_addresses,
+        check_interval=int(os.getenv('SCALE_CHECK_INTERVAL', '10')),
+        min_nodes=int(os.getenv('MIN_SERVICE_NODES', '3')),
+        max_nodes=int(os.getenv('MAX_SERVICE_NODES', '10'))
+    )
+    scaling_manager.start()
     
     # Create server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     mktplace_pb2_grpc.add_MarketplaceServiceServicer_to_server(
-        MarketplaceController(service_registry_for_routing), server
+        MarketplaceController(service_registry), server
     )
     
     server.add_insecure_port(f'{host}:{port}')
     
-    print(f"[Controller] Starting on {host}:{port}")
+    logger.info(f"Starting controller on {host}:{port}")
     server.start()
     
     try:
@@ -140,20 +182,26 @@ def start_controller(host='localhost', port=50051,
             time.sleep(86400)  # Keep running
     except KeyboardInterrupt:
         monitor.stop()
+        scaling_manager.stop()
         server.stop(0)
-        print("[Controller] Stopped")
+        logger.info("Controller stopped")
 
 
 if __name__ == '__main__':
+    # system will only run in docker, no need to use localhost
     service_nodes = [
-        'localhost:50052',  # service node 1
-        'localhost:50053',  # service node 2
+        'service-node-0:50051',
+        'service-node-1:50051',
+        'service-node-2:50051',
     ]
     
     storage_nodes = {
-        0: 'localhost:50060',
-        1: 'localhost:50061',
-        2: 'localhost:50062',
+        0: 'storage-node-0:50051',
+        1: 'storage-node-1:50051',
+        2: 'storage-node-2:50051',
     }
     
-    start_controller(service_nodes=service_nodes, storage_nodes=storage_nodes)
+    host = '0.0.0.0'
+    port = 50051
+    
+    start_controller(host=host, port=port, service_nodes=service_nodes, storage_nodes=storage_nodes)

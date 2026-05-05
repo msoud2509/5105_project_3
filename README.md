@@ -3,7 +3,14 @@
 
 ## Setup Instructions
 1. First, enter the devcontainer.
-2. Generate gRPC code from the `.proto` files:
+2. Generate gRPC code from the `.proto` files (this also fixes the imports automatically):
 ```bash
-python -m grpc_tools.protoc -IgRPC --python_out=gRPC --grpc_python_out=gRPC gRPC/mktplace.proto gRPC/storage_replica.proto
+python generate_grpc.py
 ```
+This script will do the normal gRPC code generation, but will manually fix importing issues that came up due to the directory structure.
+
+3. Create the docker system by running the following command in the root directory:
+```bash
+docker compose up
+```
+

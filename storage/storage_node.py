@@ -301,11 +301,13 @@ def start_storage_node(node_id: int, replica_addresses: Dict[int, str], is_prima
 
 
 if __name__ == '__main__':
-    # For testing
+    # For testing and Docker
     import os
     
     node_id = int(os.getenv('NODE_ID', 0))
     is_primary = os.getenv('IS_PRIMARY', 'false').lower() == 'true'
+    host = os.getenv('GRPC_HOST', '0.0.0.0')
+    port = int(os.getenv('GRPC_PORT', 50051))
     
     # Hardcoded for docker-compose (adjust as needed)
     replica_addresses = {
@@ -314,4 +316,4 @@ if __name__ == '__main__':
         2: 'storage-node-2:50051'
     }
     
-    start_storage_node(node_id, replica_addresses, is_primary)
+    start_storage_node(node_id, replica_addresses, is_primary, host=host, port=port)

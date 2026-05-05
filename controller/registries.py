@@ -1,7 +1,12 @@
 """Registries for managing storage nodes and service nodes."""
 
+import logging
 from threading import Lock
 from typing import Dict, Optional, List, Tuple
+
+# configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class StorageNodeRegistry:
@@ -62,14 +67,15 @@ class StorageNodeRegistry:
 
 
 class ServiceNodeRegistry:
-    """Registry to manage service nodes and their attached storage nodes."""
+    """Registry to manage service nodes, their attached storage nodes, and routing."""
 
     def __init__(self, storage_registry: StorageNodeRegistry):
         self.lock = Lock()
-        self.service_nodes = {}  # {service_id: {'address': str, 'storage_node_id': int}}
+        self.service_nodes = {}  # {service_id: {'address': str, 'storage_node_id': int, 'healthy': bool}}
         self.storage_registry = storage_registry
-        self.service_node_counter = 0  # For assigning unique IDs
-        self.round_robin_index = 0  # For round-robin assignment
+        self.service_node_counter = 0
+        self.round_robin_index = 0 # For round-robin assignment to storage
+        self.routing_index = 0 # For round-robin routing to service nodes
     
     def add_service_node(self, address: str) -> Tuple[int, int]:
         """
@@ -95,11 +101,36 @@ class ServiceNodeRegistry:
             
             self.service_nodes[service_id] = {
                 'address': address,
-                'storage_node_id': assigned_storage_id
+                'storage_node_id': assigned_storage_id,
+                'healthy': True
             }
             
-            print(f"[Controller] Service node {service_id} attached to storage node {assigned_storage_id}")
+            logger.info(f"Service node {service_id} attached to storage node {assigned_storage_id}")
             return service_id, assigned_storage_id
+    
+    def mark_healthy(self, node_id: int, healthy: bool):
+        """Mark a service node as healthy or unhealthy."""
+        with self.lock:
+            if node_id in self.service_nodes:
+                self.service_nodes[node_id]['healthy'] = healthy
+    
+    def get_healthy_node(self):
+        """Get next healthy service node via round-robin for routing requests."""
+        with self.lock:
+            if not self.service_nodes:
+                return None, None
+            
+            node_ids = list(self.service_nodes.keys())
+            num_nodes = len(node_ids)
+            
+            for _ in range(num_nodes):
+                current_node_id = node_ids[self.routing_index % num_nodes]
+                self.routing_index = (self.routing_index + 1) % num_nodes
+                
+                if self.service_nodes[current_node_id]['healthy']:
+                    return current_node_id, self.service_nodes[current_node_id]
+            
+            return None, None
     
     def get_service_node_storage(self, service_id: int) -> Optional[int]:
         with self.lock:
@@ -130,15 +161,30 @@ class ServiceNodeRegistry:
                               if nid != failed_storage_id]
             
             if not healthy_storage:
-                print(f"[Controller] Warning: No healthy storage nodes to redistribute to")
+                logger.warning(f"No healthy storage nodes to redistribute to")
                 return
             
             for i, service_id in enumerate(services):
                 new_storage_id = healthy_storage[i % len(healthy_storage)]
                 self.service_nodes[service_id]['storage_node_id'] = new_storage_id
-                print(f"[Controller] Service node {service_id} reassigned from "
+                logger.info(f"Service node {service_id} reassigned from "
                       f"storage {failed_storage_id} to storage {new_storage_id}")
     
     def get_all_service_nodes(self) -> Dict[int, Dict]:
         with self.lock:
             return dict(self.service_nodes)
+    
+    def get_service_node_by_address(self, address: str) -> Optional[int]:
+        with self.lock:
+            for service_id, info in self.service_nodes.items():
+                if info['address'] == address:
+                    return service_id
+        return None
+    
+    def remove_service_node(self, service_id: int) -> bool:
+        """Remove a service node from the registry. Returns True if removed, False if not found."""
+        with self.lock:
+            if service_id in self.service_nodes:
+                del self.service_nodes[service_id]
+                return True
+        return False

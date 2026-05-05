@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package service_node;
+
+service ServiceNodeControl {
+  // Controller assigns a storage node to a service node when it registers
+  rpc AssignStorageNode(AssignStorageNodeRequest) returns (AssignStorageNodeResponse);
+  
+  // Controller updates service node's storage node assignment after failover
+  rpc UpdateStorageNode(UpdateStorageNodeRequest) returns (UpdateStorageNodeResponse);
+}
+
+message AssignStorageNodeRequest {
+  int32 service_node_id = 1;
+  string storage_node_address = 2;
+  int32 storage_node_id = 3;
+}
+
+message AssignStorageNodeResponse {
+  bool success = 1;
+}
+
+message UpdateStorageNodeRequest {
+  int32 service_node_id = 1;
+  string storage_node_address = 2;
+  int32 storage_node_id = 3;
+}
+
+message UpdateStorageNodeResponse {
+  bool success = 1;
+}
