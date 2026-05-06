@@ -165,17 +165,24 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
                 for item_id, item in self.data.items():
                     if request.category and item.get('category') != request.category:
                         continue
-                    if request.search_term and request.search_term.lower() not in item.get('title', '').lower():
+                    if request.keyword and request.keyword.lower() not in item.get('title', '').lower():
                         continue
                     results.append(item)
             
             return mktplace_pb2.SearchItemsResponse(
                 count=len(results),
-                items=[mktplace_pb2.ItemInfo(
-                    item_id=item.get('item_id', ''),
-                    title=item.get('title', ''),
-                    current_price=item.get('current_price', 0.0)
-                ) for item in results[:100]]  # Limit to 100 results
+            items=[mktplace_pb2.Item(
+                item_id=item.get('item_id', ''),
+                seller_id=item.get('seller_id', ''),
+                title=item.get('title', ''),
+                category=item.get('category', ''),
+                description=item.get('description', ''),
+                starting_price=item.get('starting_price', 0.0),
+                current_price=item.get('current_price', 0.0),
+                quantity=item.get('quantity', 0),
+                status=item.get('status', ''),
+                version=item.get('version', 0)
+            ) for item in results[:100]]
             )
         
         except Exception as e:
@@ -194,9 +201,12 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
             with self.data_lock:
                 if request.item_id in self.data:
                     item = self.data[request.item_id]
-                    item['current_price'] = request.current_price
-                    item['quantity'] = request.quantity
-                    item['status'] = request.status
+                    if request.current_price > 0:
+                        item['current_price'] = request.current_price
+                    if request.quantity > 0:
+                        item['quantity'] = request.quantity
+                    if request.status: # Check if string is not empty
+                        item['status'] = request.status
                     item['version'] = item.get('version', 0) + 1
                     return mktplace_pb2.UpdateItemResponse(success=True, version=item['version'])
                 else:

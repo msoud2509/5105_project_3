@@ -70,7 +70,9 @@ message UpdateItemRequest {
 }
 
 message UpdateItemResponse {
-  bool overwritten = 1;
+  bool success = 1;
+  int32 version = 2;
+
 }
 
 message PlaceBidRequest {
@@ -80,7 +82,8 @@ message PlaceBidRequest {
 }
 
 message PlaceBidResponse {
-  bool   success   = 1;
+  bool   success   = 1; 
+  string message   = 2; 
   double new_price = 3; // new price after bid is placed
 }
 

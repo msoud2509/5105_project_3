@@ -286,7 +286,7 @@ if __name__ == '__main__':
     
     # Get configuration from environment variables or command line arguments
     node_id = int(os.getenv('NODE_ID', '0'))
-    host = os.getenv('GRPC_HOST', 'localhost')
+    host = os.getenv('GRPC_HOST', '0.0.0.0')
     port = int(os.getenv('GRPC_PORT', '50051'))
     
     # Allow command line override
