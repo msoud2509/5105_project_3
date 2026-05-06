@@ -11,8 +11,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY storage /app/storage
 COPY gRPC /app/gRPC
 
-# Create data directory
+# Create data directory and copy data file
 RUN mkdir -p /app/data
+COPY storage/marketplace_items.jsonl /app/data/marketplace_items.jsonl
 
 # Storage node environment variables
 ENV NODE_ID=0

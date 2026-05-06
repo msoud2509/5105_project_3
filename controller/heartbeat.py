@@ -43,6 +43,8 @@ class HealthMonitor(threading.Thread):
     
     def run(self):
         """Periodically check health of all nodes."""
+        logger.info("[Controller] Waiting 30 seconds for data replication to backups...")
+        time.sleep(30)  # Wait for primary to replicate data to backups before starting heartbeats
         while self.running:
             time.sleep(self.heartbeat_interval)
             self._send_heartbeats()

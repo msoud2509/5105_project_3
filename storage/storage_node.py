@@ -16,7 +16,7 @@ try:
     from gRPC import mktplace_pb2
     from gRPC import mktplace_pb2_grpc
 except ImportError:
-    print("Warning: gRPC modules not found. See README.md for instructions on generating gRPC code.")
+    logger.info("Warning: gRPC modules not found. See README.md for instructions on generating gRPC code.")
 
 
 class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
@@ -35,12 +35,15 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
         self.running = True
     
     def startup(self):
-        """If primary, load data from file and replicate to backups. Otherwise, just start."""
+        """Load data from file for all nodes. Primary also replicates to backups."""
+        # All nodes load from file
+        self._load_data_from_file()
+        
+        # Primary also replicates to backups (for consistency)
         if self.is_primary:
-            self._load_data_from_file()
             self._replicate_data_to_backups()
         
-        print(f'[Node {self.node_id}] Storage node started (Primary: {self.is_primary})')
+        logger.info(f'[Node {self.node_id}] Storage node started (Primary: {self.is_primary}), Data items: {len(self.data)}')
     
     def shutdown(self):
         self.running = False
@@ -55,11 +58,13 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
                         item = json.loads(line)
                         with self.data_lock:
                             self.data[item['item_id']] = item
-            print(f"[Node {self.node_id}] Loaded {len(self.data)} items from file")
+            logger.info(f"[Node {self.node_id}] Loaded {len(self.data)} items from file")
+        else:
+            logger.warning(f"[Node {self.node_id}] Data file not found at {data_file}")
     
     def _replicate_data_to_backups(self):
         """ON STARTUP: Replicate all data to backup nodes (if primary)."""
-        print(f"[Node {self.node_id}] Replicating {len(self.data)} items to backups")
+        logger.info(f"[Node {self.node_id}] Replicating {len(self.data)} items to backups")
         
         for node_id, address in self.replica_addresses.items():
             if node_id != self.node_id:
@@ -73,10 +78,10 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
                             try:
                                 stub.CreateItem(request, timeout=5)
                             except Exception as e:
-                                print(f"[Node {self.node_id}] Failed to replicate item {item_id} to node {node_id}: {e}")
+                                logger.error(f"[Node {self.node_id}] Failed to replicate item {item_id} to node {node_id}: {e}")
                 except Exception as e:
-                    print(f"[Node {self.node_id}] Failed to connect to node {node_id} at {address}: {e}")
-    
+                    logger.error(f"[Node {self.node_id}] Failed to connect to node {node_id} at {address}: {e}")
+
     def _dict_to_create_item_request(self, item_dict):
         """Convert item dict to CreateItemRequest."""
         return mktplace_pb2.CreateItemRequest(
@@ -93,24 +98,11 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
     ################################### All below are gRPC method implementations ###################################
     def CreateItem(self, request, context):
         try:
-            # If not primary, forward to primary
-            if not self.is_primary:
-                primary_address = self.replica_addresses.get(self.primary_node_id)
-                if primary_address:
-                    try:
-                        with grpc.insecure_channel(primary_address) as channel:
-                            stub = mktplace_pb2_grpc.MarketplaceServiceStub(channel)
-                            return stub.CreateItem(request, timeout=5)
-                    except Exception as e:
-                        print(f"[Node {self.node_id}] Failed to forward CreateItem to primary: {e}")
-                        context.set_details(f"Primary unavailable")
-                        context.set_code(grpc.StatusCode.UNAVAILABLE)
-                        return mktplace_pb2.CreateItemResponse(success=False)
+            # If primary, replicate to all backups
+            if self.is_primary:
+                self._replicate_write_to_backups('CreateItem', request)
             
-            # I'm primary, replicate to all backups
-            self._replicate_write_to_backups('CreateItem', request)
-            
-            # Store locally
+            # Store locally (both primary and backup)
             item_dict = {
                 'item_id': request.item_id,
                 'seller_id': request.seller_id,
@@ -130,7 +122,7 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
             return mktplace_pb2.CreateItemResponse(success=True, item_id=request.item_id)
         
         except Exception as e:
-            print(f"[Node {self.node_id}] CreateItem error: {e}")
+            logger.info(f"[Node {self.node_id}] CreateItem error: {e}")
             context.set_details(str(e))
             context.set_code(grpc.StatusCode.INTERNAL)
             return mktplace_pb2.CreateItemResponse(success=False)
@@ -140,22 +132,28 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
         try:
             with self.data_lock:
                 if request.item_id in self.data:
-                    item = self.data[request.item_id]
+                    item_dict = self.data[request.item_id]
+                    item = mktplace_pb2.Item(
+                        item_id=item_dict.get('item_id', ''),
+                        seller_id=item_dict.get('seller_id', ''),
+                        title=item_dict.get('title', ''),
+                        category=item_dict.get('category', ''),
+                        description=item_dict.get('description', ''),
+                        starting_price=item_dict.get('starting_price', 0.0),
+                        current_price=item_dict.get('current_price', 0.0),
+                        quantity=item_dict.get('quantity', 0),
+                        status=item_dict.get('status', ''),
+                        version=item_dict.get('version', 0)
+                    )
                     return mktplace_pb2.GetItemResponse(
                         found=True,
-                        item_id=item.get('item_id', ''),
-                        seller_id=item.get('seller_id', ''),
-                        title=item.get('title', ''),
-                        category=item.get('category', ''),
-                        current_price=item.get('current_price', 0.0),
-                        quantity=item.get('quantity', 0),
-                        status=item.get('status', '')
+                        item=item
                     )
                 else:
                     return mktplace_pb2.GetItemResponse(found=False)
         
         except Exception as e:
-            print(f"[Node {self.node_id}] GetItem error: {e}")
+            logger.info(f"[Node {self.node_id}] GetItem error: {e}")
             context.set_details(str(e))
             context.set_code(grpc.StatusCode.INTERNAL)
             return mktplace_pb2.GetItemResponse(found=False)
@@ -181,7 +179,7 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
             )
         
         except Exception as e:
-            print(f"[Node {self.node_id}] SearchItems error: {e}")
+            logger.info(f"[Node {self.node_id}] SearchItems error: {e}")
             context.set_details(str(e))
             context.set_code(grpc.StatusCode.INTERNAL)
             return mktplace_pb2.SearchItemsResponse(count=0)
@@ -189,22 +187,9 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
     def UpdateItem(self, request, context):
         """Handle UpdateItem request."""
         try:
-            # If not primary, forward to primary
-            if not self.is_primary:
-                primary_address = self.replica_addresses.get(self.primary_node_id)
-                if primary_address:
-                    try:
-                        with grpc.insecure_channel(primary_address) as channel:
-                            stub = mktplace_pb2_grpc.MarketplaceServiceStub(channel)
-                            return stub.UpdateItem(request, timeout=5)
-                    except Exception as e:
-                        print(f"[Node {self.node_id}] Failed to forward UpdateItem to primary: {e}")
-                        context.set_details(f"Primary unavailable")
-                        context.set_code(grpc.StatusCode.UNAVAILABLE)
-                        return mktplace_pb2.UpdateItemResponse(success=False)
-            
-            # I'm primary, replicate to all backups
-            self._replicate_write_to_backups('UpdateItem', request)
+            # If primary, replicate to all backups
+            if self.is_primary:
+                self._replicate_write_to_backups('UpdateItem', request)
             
             with self.data_lock:
                 if request.item_id in self.data:
@@ -218,7 +203,7 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
                     return mktplace_pb2.UpdateItemResponse(success=False)
         
         except Exception as e:
-            print(f"[Node {self.node_id}] UpdateItem error: {e}")
+            logger.info(f"[Node {self.node_id}] UpdateItem error: {e}")
             context.set_details(str(e))
             context.set_code(grpc.StatusCode.INTERNAL)
             return mktplace_pb2.UpdateItemResponse(success=False)
@@ -226,22 +211,9 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
     def PlaceBid(self, request, context):
         """Handle PlaceBid request."""
         try:
-            # If not primary, forward to primary
-            if not self.is_primary:
-                primary_address = self.replica_addresses.get(self.primary_node_id)
-                if primary_address:
-                    try:
-                        with grpc.insecure_channel(primary_address) as channel:
-                            stub = mktplace_pb2_grpc.MarketplaceServiceStub(channel)
-                            return stub.PlaceBid(request, timeout=5)
-                    except Exception as e:
-                        print(f"[Node {self.node_id}] Failed to forward PlaceBid to primary: {e}")
-                        context.set_details(f"Primary unavailable")
-                        context.set_code(grpc.StatusCode.UNAVAILABLE)
-                        return mktplace_pb2.PlaceBidResponse(success=False)
-            
-            # I'm primary, replicate to all backups
-            self._replicate_write_to_backups('PlaceBid', request)
+            # If primary, replicate to all backups
+            if self.is_primary:
+                self._replicate_write_to_backups('PlaceBid', request)
             
             with self.data_lock:
                 if request.item_id in self.data:
@@ -256,7 +228,7 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
                     return mktplace_pb2.PlaceBidResponse(success=False, message="Item not found")
         
         except Exception as e:
-            print(f"[Node {self.node_id}] PlaceBid error: {e}")
+            logger.info(f"[Node {self.node_id}] PlaceBid error: {e}")
             context.set_details(str(e))
             context.set_code(grpc.StatusCode.INTERNAL)
             return mktplace_pb2.PlaceBidResponse(success=False, message=str(e))
@@ -275,26 +247,30 @@ class StorageNode(mktplace_pb2_grpc.MarketplaceServiceServicer):
                     response = method(request, timeout=5)
                     success_count += 1
             except Exception as e:
-                print(f"[Node {self.node_id}] Failed to replicate {method_name} to node {backup_id}: {e}")
+                logger.info(f"[Node {self.node_id}] Failed to replicate {method_name} to node {backup_id}: {e}")
         
         if success_count == 0 and len(self.replica_addresses) > 1:
-            print(f"[Node {self.node_id}] Warning: Failed to replicate to any backup nodes")
+            logger.info(f"[Node {self.node_id}] Warning: Failed to replicate to any backup nodes")
     
 
 
 def start_storage_node(node_id: int, replica_addresses: Dict[int, str], is_primary: bool = False, 
                        host='0.0.0.0', port=50051):
     """Start the storage node gRPC server."""
+    logger.info(f"[Node {node_id}] Starting storage node setup (Primary: {is_primary})")
     storage_node = StorageNode(node_id, replica_addresses, is_primary)
+    logger.info(f"[Node {node_id}] Running startup...")
     storage_node.startup()
+    logger.info(f"[Node {node_id}] Startup complete, creating gRPC server")
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     mktplace_pb2_grpc.add_MarketplaceServiceServicer_to_server(storage_node, server)
     
     server.add_insecure_port(f'{host}:{port}')
     
-    print(f"[Node {node_id}] Storage node starting on {host}:{port} (Primary: {is_primary})")
+    logger.info(f"[Node {node_id}] Storage node starting on {host}:{port} (Primary: {is_primary})")
     server.start()
+    logger.info(f"[Node {node_id}] Storage node gRPC server started successfully")
     
     try:
         while True:
@@ -302,7 +278,7 @@ def start_storage_node(node_id: int, replica_addresses: Dict[int, str], is_prima
     except KeyboardInterrupt:
         storage_node.shutdown()
         server.stop(0)
-        print(f"[Node {node_id}] Storage node stopped")
+        logger.info(f"[Node {node_id}] Storage node stopped")
 
 
 if __name__ == '__main__':

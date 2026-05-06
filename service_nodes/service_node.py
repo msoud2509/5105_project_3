@@ -87,10 +87,13 @@ class ServiceNode(mktplace_pb2_grpc.MarketplaceServiceServicer,
     def GetItem(self, request, context):
         """Forward GetItem to storage node."""
         try:
+            logger.info(f"[ServiceNode {self.service_node_id}] GetItem request for {request.item_id}")
             stub = self._get_storage_stub()
             response = stub.GetItem(request, timeout=10)
+            logger.info(f"[ServiceNode {self.service_node_id}] GetItem response: found={response.found}")
             return response
         except Exception as e:
+            logger.error(f"[ServiceNode {self.service_node_id}] GetItem error: {e}", exc_info=True)
             context.set_details(str(e))
             context.set_code(grpc.StatusCode.INTERNAL)
             return mktplace_pb2.GetItemResponse()
@@ -254,6 +257,7 @@ def start_service_node(service_node_id: int, host='localhost', port=50052):
         host: Service node host address
         port: Service node port
     """
+    logger.info(f"[ServiceNode] Starting start_service_node for node {service_node_id}")
     service_node = ServiceNode(service_node_id)
     
     # Create server
@@ -265,15 +269,16 @@ def start_service_node(service_node_id: int, host='localhost', port=50052):
     
     server.add_insecure_port(f'{host}:{port}')
     
-    print(f"[ServiceNode {service_node_id}] Starting on {host}:{port}")
+    logger.info(f"[ServiceNode {service_node_id}] Starting gRPC server on {host}:{port}")
     server.start()
+    logger.info(f"[ServiceNode {service_node_id}] gRPC server started successfully")
     
     try:
         while True:
             time.sleep(86400)  # Keep running
     except KeyboardInterrupt:
         server.stop(0)
-        print(f"[ServiceNode {service_node_id}] Stopped")
+        logger.info(f"[ServiceNode {service_node_id}] Stopped")
 
 
 if __name__ == '__main__':

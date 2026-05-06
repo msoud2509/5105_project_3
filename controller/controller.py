@@ -31,7 +31,7 @@ class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
     def _forward_to_node(self, method_name, request):
         """Forward a request to a healthy service node."""
         node_id, node_info = self.service_registry.get_healthy_node()
-        if not node_id:
+        if node_id == None:
             raise grpc.RpcError(grpc.StatusCode.UNAVAILABLE, "No healthy service nodes available")
         
         address = node_info['address']

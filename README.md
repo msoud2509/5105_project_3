@@ -13,6 +13,8 @@ This script will do the normal gRPC code generation, but will manually fix impor
 ```bash
 docker compose up
 ```
+On the safe side, will need to wait around 30 seconds to allow the primary to complete replication of data to the backup nodes.
+
 4. Then run the mock client container in a separate terminal:
 ```bash
 docker compose run --rm mock-client
