@@ -45,7 +45,7 @@ class ServiceScalingManager(threading.Thread):
         self.controller = controller
         self.scale_up_threshold = 5.0  # req/sec
         self.scale_down_threshold = 2.0  # req/sec
-        self._cooldown = 5  # seconds between scaling actions
+        self._cooldown = 30  # seconds between scaling actions change to 5 for testing
         self._last_scale_time = 0
         self.service_registry = service_registry
         self.storage_registry = storage_registry
@@ -85,8 +85,7 @@ class ServiceScalingManager(threading.Thread):
         current_count = self._get_service_node_count()
         logger.info(f"[ScalingManager] Current service nodes: {current_count}")
         
-        # TODO: Implement actual metrics collection
-        # For now, use a placeholder metric (always maintain min_nodes)
+
         metrics = self._collect_metrics()
         
         scale_action = self._determine_scale_action(current_count, metrics)
@@ -108,23 +107,6 @@ class ServiceScalingManager(threading.Thread):
             logger.error(f"[ScalingManager] Error counting service nodes: {e}")
             return self.min_nodes
     
-    # def _collect_metrics(self) -> Dict:
-    #     """
-    #     Collect metrics from service nodes.
-        
-    #     TODO: Implement actual metrics collection:
-    #     - CPU usage
-    #     - Memory usage
-    #     - Request count
-    #     - Response times
-    #     """
-    #     # Placeholder: return empty metrics dict
-    #     return {
-    #         'cpu_avg': 0,
-    #         'memory_avg': 0,
-    #         'request_rate': 0,
-    #         'p95_latency': 0
-    #     }
     def _collect_metrics(self) -> Dict:
         rate = 0.0
         if self.controller:
@@ -132,21 +114,7 @@ class ServiceScalingManager(threading.Thread):
             logger.info(f"[ScalingManager] Request rate: {rate:.2f} req/sec")
         return {'request_rate': rate}
     
-    # def _determine_scale_action(self, current_count: int, metrics: Dict) -> str:
-    #     """
-    #     Determine if we should scale up, down, or maintain.
-        
-    #     TODO: Implement metrics-based decision logic:
-    #     - If CPU > 80% or requests > threshold: scale_up
-    #     - If CPU < 20% and requests < threshold: scale_down
-    #     - Otherwise: maintain
-    #     """
-    #     # For now, just maintain minimum
-    #     if current_count < self.min_nodes:
-    #         return 'scale_up'
-    #     elif current_count > self.min_nodes:
-    #         return 'scale_down'
-    #     return 'maintain'
+
     def _determine_scale_action(self, current_count: int, metrics: Dict) -> str:
         rate = metrics.get('request_rate', 0)
         now = time.time()
