@@ -43,9 +43,9 @@ class ServiceScalingManager(threading.Thread):
         """
         super().__init__(daemon=True)
         self.controller = controller
-        self.scale_up_threshold = 10.0  # req/sec
+        self.scale_up_threshold = 5.0  # req/sec
         self.scale_down_threshold = 2.0  # req/sec
-        self._cooldown = 30  # seconds between scaling actions
+        self._cooldown = 5  # seconds between scaling actions
         self._last_scale_time = 0
         self.service_registry = service_registry
         self.storage_registry = storage_registry
@@ -182,7 +182,7 @@ class ServiceScalingManager(threading.Thread):
             
             # Get docker network
             networks = self.docker_client.networks.list(
-                filters={'name': 'marketplace-network'}
+                filters={'name': '5105_project_3_marketplace-network'}
             )
             network = networks[0] if networks else None
             
@@ -192,7 +192,7 @@ class ServiceScalingManager(threading.Thread):
             
             # Create container
             container = self.docker_client.containers.run(
-                'marketplace-project_3-service-node-0:latest',  # Use latest image
+                '5105_project_3-service-node-0:latest',  # Use latest image
                 detach=True,
                 name=f'service-node-{new_node_id}',
                 environment=[

@@ -61,6 +61,10 @@ class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
                 # call the appropriate method on the service node
                 method = getattr(stub, method_name)
                 response = method(request, timeout=10)
+                # Increment request count for scaling decisions
+                with self._count_lock:
+                    self._request_count += 1
+                    
                 return response
         except grpc.RpcError as e:
             # mark the node as unhealthy if it fails
