@@ -14,6 +14,7 @@ try:
     from gRPC import mktplace_pb2_grpc
     from gRPC import service_node_pb2
     from gRPC import service_node_pb2_grpc
+    import threading
 except ImportError:
     logger.warning("Proto files not found. See README.md for instructions on generating gRPC code.")
 
@@ -27,7 +28,24 @@ class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
     
     def __init__(self, service_registry):
         self.service_registry = service_registry
-    
+
+        #have a count_lock to protect request count and window start time
+        self._count_lock = threading.Lock()
+        self._request_count = 0
+        self._window_start = time.time()
+
+    def get_request_rate(self) -> float:
+        """Returns requests/sec since last call, then resets the window."""
+        with self._count_lock:
+            now = time.time()
+            elapsed = now - self._window_start
+            rate = self._request_count / elapsed if elapsed > 0 else 0
+            # Reset for next window
+            self._request_count = 0
+            self._window_start = now
+            return rate
+        
+
     def _forward_to_node(self, method_name, request):
         """Forward a request to a healthy service node."""
         node_id, node_info = self.service_registry.get_healthy_node()
@@ -99,7 +117,33 @@ class MarketplaceController(mktplace_pb2_grpc.MarketplaceServiceServicer):
             context.set_details(str(e))
             context.set_code(grpc.StatusCode.INTERNAL)
             return mktplace_pb2.PlaceBidResponse()
+        
+    def JoinAuction(self, request_iterator, context):
+        """Forward a bidirectional stream to a service node."""
+        node_id, node_info = self.service_registry.get_healthy_node()
+        if node_id is None:
+            context.set_details("No healthy service nodes available")
+            context.set_code(grpc.StatusCode.UNAVAILABLE)
+            return
 
+        address = node_info['address']
+        try:
+            with grpc.insecure_channel(address) as channel:
+                stub = mktplace_pb2_grpc.MarketplaceServiceStub(channel)
+                # Forward the input stream and yield from the output stream
+                for response in stub.JoinAuction(request_iterator):
+                    yield response
+        except Exception as e:
+            logger.error(f"Auction stream failed: {e}")
+            context.set_details(str(e))
+            context.set_code(grpc.StatusCode.INTERNAL)
+        
+    
+        
+    ################################## Above are gRPC forwards ##################################
+
+
+        
 
 def start_controller(host='localhost', port=50051, 
                     service_nodes=None, storage_nodes=None):
@@ -161,10 +205,13 @@ def start_controller(host='localhost', port=50051,
     monitor.start()
     
     # Start service node scaling manager
+    controller = MarketplaceController(service_registry)
+
     scaling_manager = ServiceScalingManager(
         service_registry=service_registry,
         storage_registry=storage_registry,
         service_node_addresses=service_node_addresses,
+        controller=controller,  # now this works
         check_interval=int(os.getenv('SCALE_CHECK_INTERVAL', '10')),
         min_nodes=int(os.getenv('MIN_SERVICE_NODES', '3')),
         max_nodes=int(os.getenv('MAX_SERVICE_NODES', '10'))
@@ -174,7 +221,7 @@ def start_controller(host='localhost', port=50051,
     # Create server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     mktplace_pb2_grpc.add_MarketplaceServiceServicer_to_server(
-        MarketplaceController(service_registry), server
+        controller, server
     )
     
     server.add_insecure_port(f'{host}:{port}')

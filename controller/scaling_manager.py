@@ -26,6 +26,7 @@ class ServiceScalingManager(threading.Thread):
                  service_registry,
                  storage_registry,
                  service_node_addresses: Dict[int, str],
+                 controller,
                  check_interval: int = 10,
                  min_nodes: int = 3,
                  max_nodes: int = 10):
@@ -41,6 +42,11 @@ class ServiceScalingManager(threading.Thread):
             max_nodes: Maximum service nodes allowed
         """
         super().__init__(daemon=True)
+        self.controller = controller
+        self.scale_up_threshold = 10.0  # req/sec
+        self.scale_down_threshold = 2.0  # req/sec
+        self._cooldown = 30  # seconds between scaling actions
+        self._last_scale_time = 0
         self.service_registry = service_registry
         self.storage_registry = storage_registry
         self.service_node_addresses = service_node_addresses
@@ -102,38 +108,63 @@ class ServiceScalingManager(threading.Thread):
             logger.error(f"[ScalingManager] Error counting service nodes: {e}")
             return self.min_nodes
     
+    # def _collect_metrics(self) -> Dict:
+    #     """
+    #     Collect metrics from service nodes.
+        
+    #     TODO: Implement actual metrics collection:
+    #     - CPU usage
+    #     - Memory usage
+    #     - Request count
+    #     - Response times
+    #     """
+    #     # Placeholder: return empty metrics dict
+    #     return {
+    #         'cpu_avg': 0,
+    #         'memory_avg': 0,
+    #         'request_rate': 0,
+    #         'p95_latency': 0
+    #     }
     def _collect_metrics(self) -> Dict:
-        """
-        Collect metrics from service nodes.
-        
-        TODO: Implement actual metrics collection:
-        - CPU usage
-        - Memory usage
-        - Request count
-        - Response times
-        """
-        # Placeholder: return empty metrics dict
-        return {
-            'cpu_avg': 0,
-            'memory_avg': 0,
-            'request_rate': 0,
-            'p95_latency': 0
-        }
+        rate = 0.0
+        if self.controller:
+            rate = self.controller.get_request_rate()
+            logger.info(f"[ScalingManager] Request rate: {rate:.2f} req/sec")
+        return {'request_rate': rate}
     
-    def _determine_scale_action(self, current_count: int, metrics: Dict) -> str:
-        """
-        Determine if we should scale up, down, or maintain.
+    # def _determine_scale_action(self, current_count: int, metrics: Dict) -> str:
+    #     """
+    #     Determine if we should scale up, down, or maintain.
         
-        TODO: Implement metrics-based decision logic:
-        - If CPU > 80% or requests > threshold: scale_up
-        - If CPU < 20% and requests < threshold: scale_down
-        - Otherwise: maintain
-        """
-        # For now, just maintain minimum
-        if current_count < self.min_nodes:
+    #     TODO: Implement metrics-based decision logic:
+    #     - If CPU > 80% or requests > threshold: scale_up
+    #     - If CPU < 20% and requests < threshold: scale_down
+    #     - Otherwise: maintain
+    #     """
+    #     # For now, just maintain minimum
+    #     if current_count < self.min_nodes:
+    #         return 'scale_up'
+    #     elif current_count > self.min_nodes:
+    #         return 'scale_down'
+    #     return 'maintain'
+    def _determine_scale_action(self, current_count: int, metrics: Dict) -> str:
+        rate = metrics.get('request_rate', 0)
+        now = time.time()
+
+        # Cooldown: don't scale too frequently
+        if now - self._last_scale_time < self._cooldown:
+            return 'maintain'
+
+        if rate > self.scale_up_threshold and current_count < self.max_nodes:
+            self._last_scale_time = now
+            logger.info(f"[ScalingManager] High load ({rate:.2f} req/s) → scale up")
             return 'scale_up'
-        elif current_count > self.min_nodes:
+        
+        elif rate < self.scale_down_threshold and current_count > self.min_nodes:
+            self._last_scale_time = now
+            logger.info(f"[ScalingManager] Low load ({rate:.2f} req/s) → scale down")
             return 'scale_down'
+        
         return 'maintain'
     
     def _scale_up(self, current_count: int):
