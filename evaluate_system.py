@@ -51,7 +51,7 @@ def run_benchmark(name, task_fn, *args):
         total_time = time.perf_counter() - start_bench
         
     if latencies:
-        avg_latency = (sum(latencies) / len(latencies)) * 1000 # convert to ms
+        avg_latency = (sum(latencies) / len(latencies)) * 1000
         throughput = len(latencies) / total_time
         print(f"Result: {success_count}/{NUM_REQUESTS} successful")
         print(f"Avg Latency: {avg_latency:.2f} ms")
@@ -65,11 +65,11 @@ if __name__ == "__main__":
     # READ-HEAVY WORKLOAD (Baseline Performance)
     run_benchmark("Read-Heavy (GetItem)", get_item_task)
     
-    # WRITE WORKLOAD (Consistency/Latency)
+    # # WRITE WORKLOAD (Consistency/Latency)
     run_benchmark("Write-Occasional (PlaceBid)", place_bid_task, 10000.0)
 
     # 3. SCALABILITY BURST (Trigger Autoscaling)
     # Double the requests and incr9ease the workers to hammer the service tier
-    NUM_REQUESTS = 20000
+    NUM_REQUESTS = 30000
     CONCURRENT_WORKERS = 40
     run_benchmark("High-Demand Burst (Autoscaling Test)", get_item_task)
